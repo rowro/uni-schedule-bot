@@ -1,0 +1,5 @@
+.env
+schedule.json
+schedule.pdf
+/node_modules
+/.idea

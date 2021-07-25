@@ -10,15 +10,12 @@ const bot = new Telegraf(process.env.BOT_TOKEN);
 bot.use(Telegraf.log())
 bot.use(session());
 
+// Парсим JSON расписание
 const schedule = parseSchedule(jsonData);
-// console.log(JSON.stringify(schedule.items.splice(0, 2), null, 4))
 
-bot.help((ctx) => ctx.reply('Напиши /start'));
-
-bot.start((ctx) => {
-    ctx.reply('Привет, я могу показать тебе расписание занятий протвинского филиала университета Дубна');
-
-    const keyboard = schedule.groups.map(group => ({
+// Запрашиваем нужную группу у пользователя
+const askGroup = (ctx, groups) => {
+    const keyboard = groups.map(group => ({
         text: `${group}`,
         callback_data: `${group}`
     }));
@@ -26,13 +23,32 @@ bot.start((ctx) => {
     return ctx.reply('Для какой группы ты хочешь получить расписание?', Markup.inlineKeyboard(keyboard, {
         wrap: (btn, index, currentRow) => currentRow.length > 3
     }));
+}
+
+// Подсказка по началу работы с ботом
+bot.help((ctx) => ctx.reply('Напиши /start'));
+
+// Обработка команды /start
+bot.start(async (ctx) => {
+    await ctx.reply('Привет, я могу показать тебе расписание занятий/экзаменов протвинского филиала университета Дубна')
+    await askGroup(ctx, schedule.groups);
 })
 
-// Hears lesson group
-bot.on('callback_query', (ctx, next) => {
-    if (schedule.groups.includes(ctx.callbackQuery.data)) {
+// Шаблон сообщения
+const scheduleDayMessageTemplate = ({items}) => `
+${items.length ? items.map(item => `- ${item.lesson}`).join('\n') : '- нет пар'}
+`;
+
+// Регулярное выражение для определения даты
+const dateRegexp = /^(0[1-9]|[12]\d|3[01]).(0[1-9]|1[0-2]).(19|20)\d{2}$/gm;
+
+bot.on('callback_query', async (ctx, next) => {
+    const query = ctx.callbackQuery.data;
+
+    // Обрабатываем выбранную группу
+    if (schedule.groups.includes(query)) {
         ctx.session = {
-            lessonGroup: ctx.callbackQuery.data,
+            lessonGroup: query,
         };
 
         const keyboard = schedule.dates.map(date => ({
@@ -40,32 +56,34 @@ bot.on('callback_query', (ctx, next) => {
             callback_data: `${date}`
         }));
 
-        return ctx.reply('А на какую дату?', Markup.inlineKeyboard(keyboard, {
+        await ctx.editMessageText(`👥 ${query}`)
+
+        return await ctx.reply('А на какую дату?', Markup.inlineKeyboard(keyboard, {
             wrap: (btn, index, currentRow) => currentRow.length > 4
         }));
     }
 
-    next()
-})
-
-const scheduleDayMessageTemplate = ({date, group, items}) => `
-📆 ${date} (${group})\n
-${items.length ? items.map(item => `- ${item.lesson}`).join('\n') : '- нет пар'}
-`;
-
-const dateRegexp = /^(0[1-9]|[12]\d|3[01]).(0[1-9]|1[0-2]).(19|20)\d{2}$/gm;
-
-// Hears date
-bot.on('callback_query', (ctx, next) => {
-    if (dateRegexp.test(ctx.callbackQuery.data)) {
+    // Обрабатываем выбранную дату
+    if (dateRegexp.test(query)) {
         let { lessonGroup } = ctx.session
         if (!lessonGroup) return false;
-        let data = findSchedule(schedule, ctx.callbackQuery.data, lessonGroup);
+        let data = findSchedule(schedule, query, lessonGroup);
         let layout = scheduleDayMessageTemplate(data);
 
-        return ctx.replyWithMarkdown(layout);
+        ctx.editMessageText(`📆 ${query}`)
+        ctx.editMessageReplyMarkup({});
+
+        return ctx.replyWithMarkdown(layout, Markup.inlineKeyboard([
+            { text: 'Выбрать другую группу/дату', callback_data: 'ask_group' }
+        ]));
     }
-    next();
+
+    if (query === 'ask_group') {
+        await ctx.editMessageReplyMarkup({});
+        return await askGroup(ctx, schedule.groups);
+    }
+
+    next()
 })
 
 bot.launch().then(() => console.log(colors.blue('Server is running 🚀')));

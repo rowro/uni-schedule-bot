@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node index.js",
+    "download": "curl http://www.uni-protvino.ru/images/tmp/shed_let_z_ex.pdf -o schedule.pdf"
   },
   "keywords": [],
   "author": "",
